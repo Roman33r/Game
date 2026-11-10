@@ -2,7 +2,10 @@ import {useEffect,useRef} from 'react';
 import * as T from 'three';
 import {useGame,orderTo,placeBuilding,support} from '../game/store';
 import {distance,visible} from '../game/systems';
-import {BUILDINGS} from '../game/data';
+import {BUILDINGS,BUILDING_SIZE} from '../game/data';
+import {CITY_BUILDINGS} from '../game/cityLayout';
+import {constructionProgress,constructionCrew,placementError} from '../game/construction';
+import {buildingModels,batchCity} from './buildingModels';
 type Props={onDistrict:(id:number)=>void;supportMode:boolean;onSupport:()=>void;focus:number;strategic:boolean};
 export default function WorldView({onDistrict,supportMode,onSupport,focus,strategic}:Props){
  const host=useRef<HTMLDivElement>(null);const api=useRef<{zoom:(v:number)=>void;focus:()=>void}|null>(null);const props=useRef({onDistrict,supportMode,onSupport});props.current={onDistrict,supportMode,onSupport};
@@ -17,14 +20,8 @@ export default function WorldView({onDistrict,supportMode,onSupport,focus,strate
   for(let x=-160;x<=160;x+=40){box(scene,x,.02,0,9,.1,240,'#242b29');for(let z=-115;z<120;z+=9)box(scene,x,.1,z,.22,.03,3,'#807e59');box(scene,x-5,.1,0,1,.2,240,'#687064');}
   for(let z=-120;z<=120;z+=40){box(scene,0,.08,z,320,.1,9,'#242b29');for(let x=-155;x<160;x+=9)box(scene,x,.15,z,3,.03,.22,'#807e59');box(scene,0,.12,z-5,320,.2,1,'#687064');}
   let seed=72;const rnd=()=>{seed=seed*16807%2147483647;return seed/2147483647;};
-  // Authored voxel building grammar: facades, window bays, parapets, roof equipment and ruins.
-  for(let x=-140;x<=140;x+=40)for(let z=-100;z<=100;z+=40){if(Math.hypot(x+40,z)<32)continue;for(let k=0;k<2;k++){
-   const bx=x+(k?9:-8),bz=z+(rnd()-.5)*8,w=10+rnd()*4,d=17+rnd()*7,h=5+Math.floor(rnd()*5)*4;const c=['#62645a','#767162','#555e57','#7c7564'][Math.floor(rnd()*4)];box(scene,bx,h/2,bz,w,h,d,c);box(scene,bx,h+.5,bz,w+.8,1,d+.8,'#3b4540');
-   for(let y=3;y<h-1;y+=3.7)for(let v=-w/2+2;v<w/2;v+=3){box(scene,bx+v,y,bz+d/2+.05,1.3,1.7,.12,rnd()>.89?'#b8a475':'#263c3b');box(scene,bx+v,y,bz-d/2-.05,1.3,1.7,.12,'#293a36');}
-   for(let y=3;y<h-1;y+=3.7)for(let v=-d/2+2;v<d/2;v+=4)box(scene,bx+w/2+.05,y,bz+v,.12,1.7,1.5,'#293a36');
-   box(scene,bx+2,h+1.2,bz+3,3,1.5,4,'#7b8074');box(scene,bx-w/2,h+1,bz, .5,2,d,'#777a6c');
-   if(rnd()>.65)for(let j=0;j<5;j++)box(scene,bx+(rnd()-.5)*20,.6,bz+d/2+2+rnd()*3,1+rnd()*2,1.2,1+rnd()*2,'#747160');
-  }}
+  const modelFactory=buildingModels(box,mat);const citySource=new T.Group();
+  for(const building of CITY_BUILDINGS)citySource.add(modelFactory.city(building));scene.add(batchCity(citySource));
   // Abandoned cars, streetlights, vegetation and debris break up the road grid.
   for(let i=0;i<65;i++){let x=-150+rnd()*300,z=Math.round((-100+rnd()*200)/40)*40+2;const car=new T.Group();car.position.set(x,0,z);car.rotation.y=rnd()>.5?0:Math.PI/2;scene.add(car);box(car,0,1,0,2.5,1.5,5,['#8d7152','#535f5d','#72574b'][i%3]);box(car,0,2,0,2.2,1,2.6,'#293b39');for(const a of [-1.3,1.3])for(const b of [-1.6,1.6])box(car,a,.6,b,.5,1,1,'#1d2523');}
   for(let i=0;i<90;i++){const x=rnd()*310-155,z=rnd()*230-115;box(scene,x,.2,z,1+rnd()*2,.4,1,'#747261');}
@@ -39,17 +36,21 @@ export default function WorldView({onDistrict,supportMode,onSupport,focus,strate
   const zombieBody=new T.InstancedMesh(boxGeo,mat('#7d8060'),1500),zombieHead=new T.InstancedMesh(boxGeo,mat('#ada281'),1500),zombieLegs=new T.InstancedMesh(boxGeo,mat('#414d40'),1500);scene.add(zombieBody,zombieHead,zombieLegs);const dummy=new T.Object3D();
   const shotGeo=new T.BufferGeometry();const shotMat=new T.LineBasicMaterial({color:'#ffd487',transparent:true,opacity:.9});const lines=new T.LineSegments(shotGeo,shotMat);scene.add(lines);
   const route=new T.Line(new T.BufferGeometry(),new T.LineDashedMaterial({color:'#b8ce8c',dashSize:2,gapSize:1}));scene.add(route);
+  const ghostMaterial=new T.MeshBasicMaterial({color:'#bfdc8a',transparent:true,opacity:.25,depthWrite:false,side:T.DoubleSide});
+  const ghost=new T.Mesh(new T.PlaneGeometry(1,1),ghostMaterial);ghost.rotation.x=-Math.PI/2;ghost.visible=false;scene.add(ghost);
+  const ghostOutline=new T.BoxHelper(ghost,'#c9e8a0');scene.add(ghostOutline);let hover:{x:number;z:number}|null=null;
   const ray=new T.Raycaster(),ndc=new T.Vector2(),plane=new T.Plane(new T.Vector3(0,1,0),0);const point=(e:PointerEvent)=>{const r=renderer.domElement.getBoundingClientRect();ndc.set((e.clientX-r.left)/r.width*2-1,-(e.clientY-r.top)/r.height*2+1);ray.setFromCamera(ndc,camera);const v=new T.Vector3();ray.ray.intersectPlane(plane,v);return {x:v.x,z:v.z};};
   let drag:{x:number;y:number;cx:number;cz:number;button:number}|null=null;let moved=false;let multi=false;const keys=new Set<string>();
   const down=(e:PointerEvent)=>{drag={x:e.clientX,y:e.clientY,cx:center.x,cz:center.z,button:e.button};moved=false;multi=e.shiftKey;renderer.domElement.setPointerCapture(e.pointerId);};
-  const movePointer=(e:PointerEvent)=>{if(!drag)return;const dx=e.clientX-drag.x,dy=e.clientY-drag.y;if(Math.hypot(dx,dy)>6)moved=true;if(moved&&drag.button!==2){center.x=drag.cx-(dx+dy*1.1)*.16*zoom;center.z=drag.cz+(dx-dy*1.1)*.16*zoom;}};
+  const movePointer=(e:PointerEvent)=>{hover=point(e);if(!drag)return;const dx=e.clientX-drag.x,dy=e.clientY-drag.y;if(Math.hypot(dx,dy)>6)moved=true;if(moved&&drag.button!==2){center.x=drag.cx-(dx+dy*1.1)*.16*zoom;center.z=drag.cz+(dx-dy*1.1)*.16*zoom;}};
   const up=(e:PointerEvent)=>{if(!drag)return;const button=drag.button;drag=null;if(moved)return;const p=point(e),w=useGame.getState().world;if(button===2){orderTo(p);return;}if(props.current.supportMode){support(p);props.current.onSupport();return;}if(w.buildMode){placeBuilding(p);return;}const u=w.units.find(u=>distance(u,p)<7);const b=w.buildings.find(b=>distance(b,p)<7);if(u||b)useGame.getState().mutate(w=>{const id=(u||b)!.id;w.selected=multi?[...new Set([...w.selected,id])]:[id];});else{props.current.onDistrict(w.districts.reduce((a,b)=>distance(a,p)<distance(b,p)?a:b).id);if(!multi)useGame.getState().mutate(w=>{w.selected=[];});}};
   const wheel=(e:WheelEvent)=>{e.preventDefault();targetZoom=T.MathUtils.clamp(targetZoom*Math.exp(e.deltaY*.001),.3,2.7);};
   const keydown=(e:KeyboardEvent)=>{if((e.target as HTMLElement).tagName==='INPUT')return;keys.add(e.key.toLowerCase());if(e.code==='Space'){e.preventDefault();useGame.getState().mutate(w=>{w.paused=!w.paused;});}if(['1','2','3'].includes(e.key))useGame.getState().mutate(w=>{w.speed=Number(e.key)===3?4:Number(e.key);});if(e.key==='Tab'){e.preventDefault();targetZoom=targetZoom>1.6?.65:2.3;}};const keyup=(e:KeyboardEvent)=>keys.delete(e.key.toLowerCase());
   renderer.domElement.addEventListener('pointerdown',down);renderer.domElement.addEventListener('pointermove',movePointer);renderer.domElement.addEventListener('pointerup',up);renderer.domElement.addEventListener('wheel',wheel,{passive:false});renderer.domElement.addEventListener('contextmenu',e=>e.preventDefault());window.addEventListener('keydown',keydown);window.addEventListener('keyup',keyup);window.addEventListener('blur',()=>keys.clear());
-  api.current={zoom:v=>{targetZoom=v;},focus:()=>{const w=useGame.getState().world;const u=w.units.find(u=>w.selected.includes(u.id));center.set(u?.x??-40,0,u?.z??0);targetZoom=.85;}};
+  api.current={zoom:v=>{targetZoom=v;},focus:()=>{const w=useGame.getState().world;const u=[...w.units,...w.buildings].find(u=>w.selected.includes(u.id));center.set(u?.x??-40,0,u?.z??0);targetZoom=.85;}};
   const resize=()=>{const width=el.clientWidth,height=el.clientHeight;renderer.setSize(width,height);const aspect=width/height;camera.left=-75*aspect;camera.right=75*aspect;camera.top=75;camera.bottom=-75;camera.updateProjectionMatrix();};const observer=new ResizeObserver(resize);observer.observe(el);resize();
   let frame=0,last=performance.now(),acc=0;const labels=el.querySelector('.map-labels')!;const labelEls=useGame.getState().world.districts.map(d=>{const div=document.createElement('div');div.className='district-label';div.innerHTML=`<span>${String(d.id+1).padStart(2,'0')}</span> ${d.name.toUpperCase()}<small></small>`;labels.appendChild(div);return div;});
+  const siteLabels=new Map<string,HTMLButtonElement>();
   function render(now:number){frame=requestAnimationFrame(render);const dt=Math.min(.1,(now-last)/1000);last=now;acc+=dt;if(acc>.08){useGame.getState().step(acc);acc=0;}const w=useGame.getState().world;
    zoom=T.MathUtils.lerp(zoom,targetZoom,.1);const cs=dt*45*zoom;if(keys.has('w')){center.x-=cs;center.z-=cs;}if(keys.has('s')){center.x+=cs;center.z+=cs;}if(keys.has('a')){center.x-=cs;center.z+=cs;}if(keys.has('d')){center.x+=cs;center.z-=cs;}center.x=T.MathUtils.clamp(center.x,-155,155);center.z=T.MathUtils.clamp(center.z,-115,115);camera.position.copy(center).add(new T.Vector3(120,160,120));camera.lookAt(center);camera.zoom=1/zoom;camera.updateProjectionMatrix();
    const daylight=.6+.4*Math.cos(w.time/200);sun.intensity=2.5*daylight;
@@ -59,14 +60,25 @@ export default function WorldView({onDistrict,supportMode,onSupport,focus,strate
    for(const u of w.units){let model=models.get(u.id);if(!model){model=unitModel(u.kind);models.set(u.id,model);dynamic.add(model);}model.position.set(u.x,.2,u.z);if(u.target)model.rotation.y=Math.atan2(u.target.x-u.x,u.target.z-u.z)+Math.PI; if(!['humvee','tank','truck'].includes(u.kind))model.children.forEach((c,i)=>c.visible=Math.floor(i/6)<u.soldiers);
     let ring=rings.get(u.id);if(!ring){ring=new T.Mesh(ringGeo,ringMat);ring.rotation.x=-Math.PI/2;scene.add(ring);rings.set(u.id,ring);}ring.position.set(u.x,.25,u.z);ring.visible=w.selected.includes(u.id);
    }
-   for(const b of w.buildings){let m=models.get(b.id);if(!m){m=new T.Group();const c=b.kind==='hq'?'#718373':'#7b8064';box(m,0,2,0,b.kind==='wall'?12:8,b.kind==='wall'?4:4,b.kind==='wall'?2:8,c);if(b.kind==='tower'){for(const x of [-3,3])for(const z of [-3,3])box(m,x,6,z,.5,9,.5,'#4e5b46');box(m,0,10,0,8,2,8,'#8b9273');box(m,0,11.5,0,9,1,9,'#414e3a');}else{box(m,0,4.5,0,9,1,9,'#a09e7b');if(b.kind==='hq'){box(m,2,8,0,.2,7,.2,'#a9b49c');box(m,3.5,10,0,3,1.6,.15,'#d0dbb3');box(m,0,1,-4.1,2,2,.2,'#202f28');}if(b.kind==='mg'||b.kind==='mortar')box(m,0,6,-2,1,1,6,'#242f26');if(b.kind==='medical'){box(m,0,5.1,0,4,.1,1,'#e4d9b5');box(m,0,5.1,0,1,.1,4,'#e4d9b5');}}models.set(b.id,m);dynamic.add(m);}m.position.set(b.x,0,b.z);}
+   const crew=constructionCrew(w);
+   for(const [id,label]of siteLabels)if(!w.buildings.some(b=>b.id===id&&b.construction)){label.remove();siteLabels.delete(id);}
+   for(const b of w.buildings){
+    let m=models.get(b.id);if(!m){m=new T.Group();m.add(modelFactory.military(b.kind),modelFactory.site(b.kind));models.set(b.id,m);dynamic.add(m);}m.position.set(b.x,0,b.z);
+    const progress=constructionProgress(b),solid=m.children[0],scaffold=m.children[1];scaffold.visible=!!b.construction;solid.children.forEach(part=>{part.visible=!b.construction||progress>=part.userData.revealAt;});
+    if(b.construction){let label=siteLabels.get(b.id);if(!label){label=document.createElement('button');label.className='construction-label';label.innerHTML='<strong></strong><span><i></i></span><small></small>';label.onclick=()=>useGame.getState().mutate(w=>{w.selected=[b.id];});labels.appendChild(label);siteLabels.set(b.id,label);}
+     const rate=Math.min(2,crew.get(b.id)||0),eta=Math.ceil((b.construction.duration-b.construction.elapsed)/Math.max(.01,rate));const p=new T.Vector3(b.x,b.kind==='tower'?15:9,b.z).project(camera);label.style.transform=`translate(${(p.x*.5+.5)*el.clientWidth}px,${(-p.y*.5+.5)*el.clientHeight}px) translate(-50%,-100%)`;label.querySelector('strong')!.textContent=`${BUILDINGS[b.kind].label} · ${Math.floor(progress*100)}%`;(label.querySelector('i') as HTMLElement).style.width=`${progress*100}%`;label.querySelector('small')!.textContent=w.paused?'ПАУЗА':rate?`СТРОИТЕЛЬСТВО · ${eta} с`:'ОЖИДАНИЕ ИНЖЕНЕРОВ';label.dataset.waiting=String(!rate);
+    }
+    let ring=rings.get(b.id);if(!ring){ring=new T.Mesh(ringGeo,ringMat);ring.rotation.x=-Math.PI/2;const size=BUILDING_SIZE[b.kind];ring.scale.setScalar(Math.max(...size)/7);scene.add(ring);rings.set(b.id,ring);}ring.position.set(b.x,.26,b.z);ring.visible=w.selected.includes(b.id);
+   }
+   ghost.visible=!!w.buildMode&&!!hover;ghostOutline.visible=ghost.visible;
+   if(w.buildMode&&hover){const [gw,gd]=BUILDING_SIZE[w.buildMode];ghost.position.set(hover.x,.3,hover.z);ghost.scale.set(gw,gd,1);const valid=!placementError(w,w.buildMode,hover);ghostMaterial.color.set(valid?'#bfdc8a':'#e58b62');ghostOutline.material.color.set(valid?'#d6efac':'#f29b75');ghostOutline.update();}
    let count=0;for(const z of w.zombies){if(count>=1500||!visible(w,z))continue;const scale=z.kind==='heavy'?1.7:z.kind==='alpha'?2.5:1;dummy.position.set(z.x,1.2*scale,z.z);dummy.scale.set(.8*scale,1.2*scale,.7*scale);dummy.updateMatrix();zombieBody.setMatrixAt(count,dummy.matrix);dummy.position.y=2.1*scale;dummy.scale.set(.6*scale,.6*scale,.6*scale);dummy.updateMatrix();zombieHead.setMatrixAt(count,dummy.matrix);dummy.position.y=.35*scale;dummy.scale.set(.75*scale,.7*scale,.5*scale);dummy.updateMatrix();zombieLegs.setMatrixAt(count,dummy.matrix);count++;}for(const mesh of [zombieBody,zombieHead,zombieLegs]){mesh.count=count;mesh.instanceMatrix.needsUpdate=true;mesh.frustumCulled=false;}
    const vertices=w.shots.flatMap(s=>[s.from.x,2,s.from.z,s.to.x,1.5,s.to.z]);shotGeo.setAttribute('position',new T.Float32BufferAttribute(vertices,3));shotGeo.computeBoundingSphere();
    const selected=w.units.find(u=>w.selected.includes(u.id));route.geometry.dispose();route.geometry=new T.BufferGeometry().setFromPoints(selected?.target?[new T.Vector3(selected.x,.4,selected.z),new T.Vector3(selected.target.x,.4,selected.target.z)]:[]);route.computeLineDistances();
    w.districts.forEach((d,i)=>{const p=new T.Vector3(d.x,0,d.z-27).project(camera);const div=labelEls[i];div.style.transform=`translate(${(p.x*.5+.5)*el.clientWidth}px,${(-p.y*.5+.5)*el.clientHeight}px) translate(-50%,-50%)`;div.dataset.status=d.status;div.style.opacity=zoom>.6?'1':'.4';div.querySelector('small')!.textContent=`${d.status==='controlled'?'КОНТРОЛЬ':d.status==='lost'?'НЕТ СВЯЗИ':'УГРОЗА'} · ${Math.ceil(d.survivors)} CIV`;});
    renderer.render(scene,camera);
   }frame=requestAnimationFrame(render);
-  return()=>{cancelAnimationFrame(frame);observer.disconnect();window.removeEventListener('keydown',keydown);window.removeEventListener('keyup',keyup);renderer.dispose();scene.traverse(o=>{if(o instanceof T.Mesh&&o.geometry!==boxGeo)o.geometry.dispose();});boxGeo.dispose();materials.forEach(m=>m.dispose());el.removeChild(renderer.domElement);labelEls.forEach(d=>d.remove());};
+  return()=>{cancelAnimationFrame(frame);observer.disconnect();window.removeEventListener('keydown',keydown);window.removeEventListener('keyup',keyup);renderer.dispose();siteLabels.forEach(label=>label.remove());modelFactory.dispose();scene.traverse(o=>{if(o instanceof T.Mesh&&o.geometry!==boxGeo)o.geometry.dispose();});boxGeo.dispose();materials.forEach(m=>m.dispose());el.removeChild(renderer.domElement);labelEls.forEach(d=>d.remove());};
  },[]);
  return <div className="world" ref={host}><div className="map-labels"/><div className="map-grain"/></div>;
 }

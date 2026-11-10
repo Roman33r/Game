@@ -1,5 +1,7 @@
 import type {Resource,UnitKind,Unit,WeaponKind,Structure} from './types';
-import {BUILDINGS,BUILDING_SIZE,UNIT_STATS} from './data';
+import {structureFootprint,normalizeRotation} from './structureGeometry';
+import {BUILD_RADIUS} from './mapConfig';
+import {BUILDINGS,UNIT_STATS} from './data';
 import {WEAPONS} from './ballistics';
 export const RESOURCE_INFO:Record<Resource,{label:string;description:string;source:string;use:string;empty:string}>={
  fuel:{label:'Топливо',description:'Обеспечивает движение военной техники и работу генераторов.',source:'Топливный склад: +0,3 ед./с, пока база не окружена.',use:'Движущаяся техника, генераторы и отправка конвоя (40 ед.).',empty:'Техника перестаёт двигаться, генераторы останавливаются.'},
@@ -25,7 +27,7 @@ export const BUILDING_INFO:Record<string,{role:string;description:string;effect:
 };
 export const UNIT_INFO:Record<UnitKind,{role:string;description:string;ability:string}>={
  infantry:{role:'Линейная пехота',description:'Основная боевая группа для зачистки улиц, защиты объектов и эвакуации гражданских.',ability:'Автоматический огонь по видимой цели; подходит для удержания и спасательных операций.'},
- engineer:{role:'Инженерная бригада',description:'Строит укрепления и инфраструктуру, сохраняя возможность защищаться.',ability:'Строительство в радиусе 38 м. Одна бригада работает на одной ближайшей стройке.'},
+ engineer:{role:'Инженерная бригада',description:'Строит укрепления и инфраструктуру, сохраняя возможность защищаться.',ability:`Строительство в радиусе ${BUILD_RADIUS} м. Одна бригада работает на одной ближайшей стройке.`},
  medic:{role:'Медицинская поддержка',description:'Лечит раненых союзников и защищает себя стрелковым оружием.',ability:'До 3 HP/с на отряд в радиусе 17 м; расходует медикаменты.'},
  scout:{role:'Разведка',description:'Мобильная группа с увеличенным обзором и точным дальним огнём.',ability:'Обзор 60 м, точная винтовка и повышенная скорость перемещения.'},
  humvee:{role:'Мобильная огневая поддержка',description:'Быстрый бронированный автомобиль с пулемётом для сопровождения и реагирования.',ability:'Высокий темп огня. В движении расходует топливо; ремонтируется мастерской.'},
@@ -42,6 +44,6 @@ export function unitCharacteristics(kind:UnitKind,u?:Unit):StatRow[]{
  return [{label:'Состав',value:`${u?.soldiers??s.men} / ${s.men} чел.`},{label:'Здоровье',value:u?`${Math.ceil(u.hp)} / ${u.maxHp}`:String(s.hp)},{label:'Урон за выстрел',value:damage?number(damage):'Не вооружён'},{label:'Интервал выстрелов',value:s.damage?`${number(weapon.cooldown)} с`:'—'},{label:'Дальность огня',value:`${s.range} м`},{label:'Обзор',value:`${unitVision(kind)} м`},{label:'Скорость',value:`${s.speed} м/с`},...(weapon.blast&&s.damage?[{label:'Радиус взрыва',value:`${weapon.blast} м`}]:[]),...(['tank','humvee','truck'].includes(kind)?[{label:'Топливо в движении',value:'0,14 ед./с'}]:[]),{label:'Стоимость',value:kind==='truck'?'40 топлива за отправку':`${s.cost} материалов + 20 еды`}];
 }
 export function buildingCharacteristics(kind:string,b?:Structure):StatRow[]{
- const s=BUILDINGS[kind],[x,z]=BUILDING_SIZE[kind],weapon=WEAPONS[kind==='mortar'?'mortar':kind==='mg'?'machinegun':'rifle'];
- return [{label:'Прочность',value:b?`${Math.ceil(b.hp)} / ${b.maxHp}`:String(s.hp)},{label:'Стоимость',value:`${s.cost} материалов`},{label:'Возведение',value:`${s.buildTime} с`},{label:'Размер площадки',value:`${x} × ${z} м`},...(s.damage?[{label:'Урон за выстрел',value:String(s.damage*(b?.level??1))},{label:'Дальность огня',value:`${s.range} м`},{label:'Интервал выстрелов',value:`${number(weapon.cooldown)} с`},...(weapon.blast?[{label:'Радиус взрыва',value:`${weapon.blast} м`}]:[])]:[])];
+ const s=BUILDINGS[kind],[x,z]=structureFootprint(kind,b?.rotation),weapon=WEAPONS[kind==='mortar'?'mortar':kind==='mg'?'machinegun':'rifle'];
+ return [{label:'Прочность',value:b?`${Math.ceil(b.hp)} / ${b.maxHp}`:String(s.hp)},{label:'Стоимость',value:`${s.cost} материалов`},{label:'Возведение',value:`${s.buildTime} с`},{label:'Размер площадки',value:`${x} × ${z} м`},...(b?[{label:'Ориентация',value:`${normalizeRotation(b.rotation)}°`}]:[]),...(s.damage?[{label:'Урон за выстрел',value:String(s.damage*(b?.level??1))},{label:'Дальность огня',value:`${s.range} м`},{label:'Интервал выстрелов',value:`${number(weapon.cooldown)} с`},...(weapon.blast?[{label:'Радиус взрыва',value:`${weapon.blast} м`}]:[])]:[])];
 }

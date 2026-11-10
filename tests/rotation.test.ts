@@ -1,0 +1,18 @@
+import {test} from 'node:test';
+import assert from 'node:assert/strict';
+import {createWorld,makeUnit,makeZombie,restoreWorld} from '../src/game/world';
+import {structureFootprint,rotateBlueprint} from '../src/game/structureGeometry';
+import {advanceConstruction,placementError} from '../src/game/construction';
+import {build} from '../src/game/systems';
+import {advanceProjectiles,fireWeapon,targetVisible} from '../src/game/ballistics';
+import {BASE_CLEARING,BUILD_RADIUS,MAP} from '../src/game/mapConfig';
+import {CITY_BUILDINGS} from '../src/game/cityLayout';
+function setup(){const w=createWorld();w.zombies=[];w.units=[makeUnit('engineer',-70,0)];return w;}
+test('blueprint rotates through four orientations and reverses with Shift',()=>{const w=setup();const angles=[];for(let i=0;i<4;i++){rotateBlueprint(w);angles.push(w.buildRotation);}assert.deepEqual(angles,[90,180,270,0]);rotateBlueprint(w,-1);assert.equal(w.buildRotation,270);assert.deepEqual(structureFootprint('wall',90),[3,12]);});
+test('rotated footprints affect overlap validation',()=>{const w=setup();w.buildings=[{id:'wall',kind:'wall',x:-50,z:0,hp:450,maxHp:450,level:1,rotation:0}];assert.equal(placementError(w,'barricade',{x:-50,z:8}),null);w.buildings[0].rotation=90;assert.match(placementError(w,'barricade',{x:-50,z:8})!,/пересекается/);});
+test('map edge placement uses rotated extents',()=>{const w=setup();w.units[0].x=MAP.maxX-4;w.buildings=[];assert.match(placementError(w,'wall',{x:MAP.maxX-4,z:0},0)!,/пределами/);assert.equal(placementError(w,'wall',{x:MAP.maxX-4,z:0},90),null);});
+test('rotation changes actual projectile interception',()=>{for(const rotation of [0,90]){const w=setup();w.units=[];w.buildings=[{id:'cover',kind:'wall',x:-55,z:4,hp:450,maxHp:450,level:1,rotation}];const zombie=makeZombie(-45,0,'heavy');w.zombies=[zombie];assert.equal(targetVisible(w,{x:-65,z:0},zombie,'rifle'),rotation===0);fireWeapon(w,{x:-65,z:0},zombie,'rifle',20,undefined,()=>.5);advanceProjectiles(w,.3);assert.equal(zombie.hp,rotation===0?130:150);}});
+test('engineers place and work beyond the previous 38 metre radius',()=>{const w=setup();assert.ok(BUILD_RADIUS>80);assert.ok(build(w,'generator',{x:15,z:0}));const site=w.buildings.at(-1)!;advanceConstruction(w,1);assert.equal(site.construction!.elapsed,1);w.units[0].x=-100;advanceConstruction(w,1);assert.equal(site.construction!.elapsed,1);w.units[0].x=-70;advanceConstruction(w,1);assert.equal(site.construction!.elapsed,2);});
+test('enlarged headquarters plaza is free of city footprints',()=>{assert.equal(BASE_CLEARING.width*BASE_CLEARING.depth,19200);assert.ok(CITY_BUILDINGS.length>280);assert.ok(CITY_BUILDINGS.every(b=>Math.abs(b.x-BASE_CLEARING.x)>=(b.width+BASE_CLEARING.width)/2||Math.abs(b.z-BASE_CLEARING.z)>=(b.depth+BASE_CLEARING.depth)/2));const w=setup();assert.equal(placementError(w,'workshop',{x:-100,z:30}),null);});
+test('active construction retains orientation after saving and loading',()=>{const w=setup();rotateBlueprint(w);assert.ok(build(w,'wall',{x:-75,z:15}));const site=w.buildings.at(-1)!;advanceConstruction(w,3);const restored=restoreWorld(JSON.parse(JSON.stringify(w)));assert.equal(restored.buildings.at(-1)!.rotation,90);assert.equal(restored.buildings.at(-1)!.construction!.elapsed,3);assert.equal(restored.buildRotation,90);assert.deepEqual(structureFootprint(site.kind,restored.buildings.at(-1)!.rotation),[3,12]);});
+test('old saves default to unrotated structures',()=>{const w=setup();const old=JSON.parse(JSON.stringify(w));delete old.buildRotation;old.buildings.forEach((b:{rotation?:number})=>delete b.rotation);const restored=restoreWorld(old);assert.equal(restored.buildRotation,0);assert.ok(restored.buildings.every(b=>b.rotation===0));});

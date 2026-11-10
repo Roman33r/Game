@@ -1,5 +1,5 @@
 // Shared deterministic footprints keep placement validation aligned with the rendered city.
-import {MAP} from './mapConfig';
+import {MAP,BASE_CLEARING} from './mapConfig';
 export interface CityBuilding {x:number;z:number;width:number;depth:number;height:number;style:number;ruined:boolean;seed:number}
 function generateCity():CityBuilding[]{
  let seed=72;const rnd=()=>{seed=seed*16807%2147483647;return seed/2147483647;};const result:CityBuilding[]=[];
@@ -10,6 +10,6 @@ function generateCity():CityBuilding[]{
  for(const {x,z} of blocks){
   if(Math.hypot(x+40,z)<32)continue;
   for(let k=0;k<2;k++){const style=Math.floor(rnd()*4);result.push({x:x+(k?8:-8),z:z+(rnd()-.5)*3,width:11+rnd()*2,depth:18+rnd()*4,height:style===0?7:10+Math.floor(rnd()*4)*4,style,ruined:rnd()>.78,seed:Math.floor(rnd()*100000)});}
- }return result;
+ }return result.filter(b=>Math.abs(b.x-BASE_CLEARING.x)>=(b.width+BASE_CLEARING.width)/2||Math.abs(b.z-BASE_CLEARING.z)>=(b.depth+BASE_CLEARING.depth)/2);
 }
 export const CITY_BUILDINGS=generateCity();

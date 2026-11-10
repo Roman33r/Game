@@ -1,6 +1,6 @@
 import type {World,Point,Projectile,WeaponKind,Zombie} from './types';
 import {CITY_BUILDINGS} from './cityLayout';
-import {BUILDING_SIZE} from './data';
+import {structureFootprint} from './structureGeometry';
 let sequence=0;
 type V3=Point&{y:number};
 export const WEAPONS:Record<WeaponKind,{speed:number;gravity:number;spread:number;blast:number;height:number;cooldown:number;color:string}>={
@@ -21,7 +21,7 @@ const CITY_INDEX=new Map<string,Box[]>();
 for(const box of CITY_COLLIDERS)for(let x=Math.floor(box.min.x/40);x<=Math.floor(box.max.x/40);x++)for(let z=Math.floor(box.min.z/40);z<=Math.floor(box.max.z/40);z++){const key=`${x},${z}`;const list=CITY_INDEX.get(key)||[];list.push(box);CITY_INDEX.set(key,list);}
 function nearbyBoxes(a:V3,b:V3){const result=new Set<Box>();for(let x=Math.floor(Math.min(a.x,b.x)/40);x<=Math.floor(Math.max(a.x,b.x)/40);x++)for(let z=Math.floor(Math.min(a.z,b.z)/40);z<=Math.floor(Math.max(a.z,b.z)/40);z++)for(const box of CITY_INDEX.get(`${x},${z}`)||[])result.add(box);return result;}
 const HEIGHT:Record<string,number>={hq:6.8,wall:4.1,barricade:2,tower:12,mg:2,mortar:1.2,medical:6.8,ammo:5.1,fuel:4.2,generator:3.3,workshop:8,checkpoint:4.2};
-function structures(w:World):Box[]{return w.buildings.filter(b=>b.hp>0).map(b=>{const [sx,sz]=BUILDING_SIZE[b.kind];return {id:b.id,min:{x:b.x-sx/2,y:0,z:b.z-sz/2},max:{x:b.x+sx/2,y:(HEIGHT[b.kind]||5)*(b.construction?.3:1),z:b.z+sz/2}};});}
+function structures(w:World):Box[]{return w.buildings.filter(b=>b.hp>0).map(b=>{const [sx,sz]=structureFootprint(b.kind,b.rotation);return {id:b.id,min:{x:b.x-sx/2,y:0,z:b.z-sz/2},max:{x:b.x+sx/2,y:(HEIGHT[b.kind]||5)*(b.construction?.3:1),z:b.z+sz/2}};});}
 function obstacleHit(w:World,a:V3,b:V3,sourceId?:string):number|null{
  let earliest:number|null=null;
  for(const box of [...nearbyBoxes(a,b),...structures(w)]){

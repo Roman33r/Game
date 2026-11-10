@@ -1,0 +1,7 @@
+import type {Resource,Structure} from '../game/types';
+import {BUILDINGS} from '../game/data';
+import {BUILDING_INFO,RESOURCE_INFO} from '../game/intel';
+import {constructionProgress} from '../game/construction';
+import ResourceIcon from './ResourceIcon';
+export function ResourceHint({kind,amount}:{kind:Resource;amount:number}){const info=RESOURCE_INFO[kind];return <><div className="hint-heading"><ResourceIcon kind={kind}/><b>{info.label}</b><strong>{Math.floor(amount)}</strong></div><p>{info.description}</p><dl><dt>СНАБЖЕНИЕ</dt><dd>{info.source}</dd><dt>РАСХОД</dt><dd>{info.use}</dd><dt>ПРИ ДЕФИЦИТЕ</dt><dd>{info.empty}</dd></dl><small>Нажмите на ресурс, чтобы открыть справочник.</small></>;}
+export function BuildingHint({kind,building}:{kind:string;building?:Structure}){const info=BUILDING_INFO[kind],stats=BUILDINGS[kind];return <><div className="hint-heading"><span>▦</span><b>{stats.label}</b><small>{building?`УР. ${building.level}`:info.role}</small></div><p>{info.description}</p><div className="hint-metrics"><span><ResourceIcon kind="materials"/>{stats.cost}</span><span>◷ {stats.buildTime} с</span><span>⛨ {building?`${Math.ceil(building.hp)}/${building.maxHp}`:stats.hp}</span>{stats.range&&<span>⌖ {stats.range} м</span>}</div>{building?.construction&&<div className="hint-construction">СТРОИТЕЛЬСТВО · {Math.floor(constructionProgress(building)*100)}%</div>}<p className="hint-effect">{info.effect}</p><small>{building?'ЛКМ — характеристики объекта.':'Кнопка i — все характеристики. ЛКМ — выбрать постройку.'}</small></>;}

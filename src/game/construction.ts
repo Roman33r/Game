@@ -1,16 +1,17 @@
 import type {World,Structure,Point} from './types';
-import {BUILDINGS,BUILDING_SIZE} from './data';
+import {BUILDINGS} from './data';
+import {structureFootprint} from './structureGeometry';
 import {CITY_BUILDINGS} from './cityLayout';
-import {MAP} from './mapConfig';
+import {MAP,BUILD_RADIUS} from './mapConfig';
 export const isReady=(b:Structure)=>!b.construction;
 export const constructionProgress=(b:Structure)=>b.construction?Math.min(1,b.construction.elapsed/b.construction.duration):1;
-export function placementError(w:World,kind:string,p:Point):string|null{
+export function placementError(w:World,kind:string,p:Point,rotation=w.buildRotation||0):string|null{
  const def=BUILDINGS[kind];if(!def)return 'Неизвестное сооружение.';
- const [sx,sz]=BUILDING_SIZE[kind];
+ const [sx,sz]=structureFootprint(kind,rotation);
  if(p.x-sx/2<MAP.minX+1||p.x+sx/2>MAP.maxX-1||p.z-sz/2<MAP.minZ+1||p.z+sz/2>MAP.maxZ-1)return 'Строительство за пределами сектора недоступно.';
  if(w.resources.materials<def.cost)return 'Недостаточно строительных материалов.';
- if(!w.units.some(u=>u.kind==='engineer'&&u.hp>0&&Math.hypot(u.x-p.x,u.z-p.z)<38))return 'Нужны инженеры в радиусе 38 м.';
- if(w.buildings.some(b=>{const [bx,bz]=BUILDING_SIZE[b.kind];return Math.abs(b.x-p.x)<(bx+sx)/2+1&&Math.abs(b.z-p.z)<(bz+sz)/2+1;}))return 'Площадка пересекается с другим сооружением.';
+ if(!w.units.some(u=>u.kind==='engineer'&&u.hp>0&&u.soldiers>0&&Math.hypot(u.x-p.x,u.z-p.z)<BUILD_RADIUS))return `Нужны инженеры в радиусе ${BUILD_RADIUS} м.`;
+ if(w.buildings.some(b=>{const [bx,bz]=structureFootprint(b.kind,b.rotation);return Math.abs(b.x-p.x)<(bx+sx)/2+1&&Math.abs(b.z-p.z)<(bz+sz)/2+1;}))return 'Площадка пересекается с другим сооружением.';
  if(CITY_BUILDINGS.some(b=>Math.abs(b.x-p.x)<(b.width+sx)/2+1&&Math.abs(b.z-p.z)<(b.depth+sz)/2+1))return 'Площадка занята городским зданием.';
  return null;
 }
@@ -18,7 +19,7 @@ export function placementError(w:World,kind:string,p:Point):string|null{
 export function constructionCrew(w:World):Map<string,number>{
  const crew=new Map<string,number>();
  for(const u of w.units){if(u.kind!=='engineer'||u.hp<=0||u.soldiers<=0)continue;
-  let site:Structure|undefined,best=38;
+  let site:Structure|undefined,best=BUILD_RADIUS;
   for(const b of w.buildings){if(!b.construction||b.hp<=0)continue;const d=Math.hypot(u.x-b.x,u.z-b.z);if(d<best){site=b;best=d;}}
   if(site)crew.set(site.id,(crew.get(site.id)||0)+u.soldiers/4);
  }return crew;

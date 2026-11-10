@@ -1,5 +1,6 @@
 import type {World,Point,Unit,Structure,WeaponKind} from './types';
 import {BUILDINGS,UNIT_STATS,ZOMBIE_STATS} from './data';
+import {normalizeRotation} from './structureGeometry';
 import {pruneGroups} from './commands';
 import {unitWeapon,unitDamage,unitVision} from './intel';
 import {MAP,clampToMap} from './mapConfig';
@@ -16,10 +17,10 @@ export function districtAt(w:World,p:Point){
 }
 export const visible=(w:World,p:Point)=>w.units.some(u=>distance(u,p)<unitVision(u.kind))||w.buildings.some(b=>isReady(b)&&b.kind==='hq'&&distance(b,p)<55);
 function move(p:Point,to:Point,speed:number,dt:number){const d=distance(p,to);if(d<.5)return;const f=Math.min(1,speed*dt/d);p.x+=(to.x-p.x)*f;p.z+=(to.z-p.z)*f;}
-export function build(w:World,kind:string,p:Point){
- const error=placementError(w,kind,p);if(error){report(w,error,'warn');return false;}
+export function build(w:World,kind:string,p:Point,rotation=w.buildRotation||0){
+ const error=placementError(w,kind,p,rotation);if(error){report(w,error,'warn');return false;}
  const def=BUILDINGS[kind];w.resources.materials-=def.cost;
- const site:Structure={id:uid(),kind,...p,hp:def.hp*.2,maxHp:def.hp,level:1,construction:{elapsed:0,duration:def.buildTime}};
+ const site:Structure={id:uid(),kind,...p,rotation:normalizeRotation(rotation),hp:def.hp*.2,maxHp:def.hp,level:1,construction:{elapsed:0,duration:def.buildTime}};
  w.buildings.push(site);w.selected=[site.id];report(w,`${def.label}: стройка начата · ${def.buildTime} сек.`);return true;
 }
 export function tick(w:World,dt:number){

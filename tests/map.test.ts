@@ -1,0 +1,9 @@
+import {test} from 'node:test';
+import assert from 'node:assert/strict';
+import {createWorld,restoreWorld,makeUnit} from '../src/game/world';
+import {MAP,clampToMap} from '../src/game/mapConfig';
+import {CITY_BUILDINGS} from '../src/game/cityLayout';
+import {build,districtAt} from '../src/game/systems';
+test('expanded map has forty unique sectors and populated outer neighbourhoods',()=>{const w=createWorld();assert.equal(w.districts.length,40);assert.equal(new Set(w.districts.map(d=>d.name)).size,40);assert.equal(w.zombies.length,600);assert.ok(CITY_BUILDINGS.length>300);assert.ok(w.districts.some(d=>d.x>200));assert.ok(w.zombies.some(z=>z.x<-200));assert.ok(w.zombies.every(z=>z.x>=MAP.minX&&z.x<=MAP.maxX&&z.z>=MAP.minZ&&z.z<=MAP.maxZ));assert.equal(districtAt(w,{x:310,z:190}).x,280);});
+test('orders clamp to new boundaries and engineers can build in outer sectors',()=>{assert.deepEqual(clampToMap({x:999,z:-999}),{x:317,z:-197});const w=createWorld();w.units=[makeUnit('engineer',-280,-160)];assert.ok(build(w,'tower',{x:-280,z:-160}));assert.equal(build(w,'tower',{x:-330,z:0}),false);});
+test('legacy saves expand once and keep old districts, resources and construction',()=>{const original=createWorld();const legacy=JSON.parse(JSON.stringify(original));legacy.version=1;legacy.districts=legacy.districts.slice(0,12);legacy.zombies=legacy.zombies.slice(0,240);delete legacy.projectiles;delete legacy.impacts;legacy.resources.materials=57;legacy.buildings[0].construction={elapsed:7,duration:60};const migrated=restoreWorld(legacy);assert.equal(migrated.version,2);assert.equal(migrated.districts.length,40);assert.equal(migrated.districts[5].name,'Downtown');assert.equal(migrated.resources.materials,57);assert.equal(migrated.buildings[0].construction!.elapsed,7);assert.equal(migrated.zombies.length,600);assert.equal(restoreWorld(JSON.parse(JSON.stringify(migrated))).zombies.length,600);});

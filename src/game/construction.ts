@@ -1,12 +1,13 @@
 import type {World,Structure,Point} from './types';
 import {BUILDINGS,BUILDING_SIZE} from './data';
 import {CITY_BUILDINGS} from './cityLayout';
+import {MAP} from './mapConfig';
 export const isReady=(b:Structure)=>!b.construction;
 export const constructionProgress=(b:Structure)=>b.construction?Math.min(1,b.construction.elapsed/b.construction.duration):1;
 export function placementError(w:World,kind:string,p:Point):string|null{
  const def=BUILDINGS[kind];if(!def)return 'Неизвестное сооружение.';
  const [sx,sz]=BUILDING_SIZE[kind];
- if(Math.abs(p.x)+sx/2>159||Math.abs(p.z)+sz/2>119)return 'Строительство за пределами сектора недоступно.';
+ if(p.x-sx/2<MAP.minX+1||p.x+sx/2>MAP.maxX-1||p.z-sz/2<MAP.minZ+1||p.z+sz/2>MAP.maxZ-1)return 'Строительство за пределами сектора недоступно.';
  if(w.resources.materials<def.cost)return 'Недостаточно строительных материалов.';
  if(!w.units.some(u=>u.kind==='engineer'&&u.hp>0&&Math.hypot(u.x-p.x,u.z-p.z)<38))return 'Нужны инженеры в радиусе 38 м.';
  if(w.buildings.some(b=>{const [bx,bz]=BUILDING_SIZE[b.kind];return Math.abs(b.x-p.x)<(bx+sx)/2+1&&Math.abs(b.z-p.z)<(bz+sz)/2+1;}))return 'Площадка пересекается с другим сооружением.';
@@ -26,7 +27,7 @@ export function advanceConstruction(w:World,dt:number):Structure[]{
  const crew=constructionCrew(w),completed:Structure[]=[];
  for(const b of w.buildings){if(!b.construction||b.hp<=0)continue;const c=b.construction;const work=Math.min(c.duration-c.elapsed,dt*Math.min(2,crew.get(b.id)||0));c.elapsed+=work;
   b.hp=Math.min(b.maxHp,b.hp+work/c.duration*b.maxHp*.8);
-  if(c.elapsed>=c.duration){delete b.construction;completed.push(b);}
+  if(c.duration-c.elapsed<1e-8){delete b.construction;completed.push(b);}
  }return completed;
 }
 export function cancelConstruction(w:World,id:string):number{

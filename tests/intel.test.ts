@@ -1,0 +1,9 @@
+import {test} from 'node:test';
+import assert from 'node:assert/strict';
+import {BUILDINGS,UNIT_STATS} from '../src/game/data';
+import {RESOURCE_INFO,BUILDING_INFO,UNIT_INFO,unitCharacteristics,buildingCharacteristics,unitDamage} from '../src/game/intel';
+import {makeUnit} from '../src/game/world';
+import type {UnitKind} from '../src/game/types';
+test('every resource, structure and unit has complete field intelligence',()=>{assert.equal(Object.keys(RESOURCE_INFO).length,6);for(const info of Object.values(RESOURCE_INFO))assert.ok(info.description&&info.source&&info.use&&info.empty);for(const kind of Object.keys(BUILDINGS)){assert.ok(BUILDING_INFO[kind].description.length>30);assert.ok(BUILDING_INFO[kind].effect.length>20);assert.ok(buildingCharacteristics(kind).length>=4);}for(const kind of Object.keys(UNIT_STATS) as UnitKind[]){assert.ok(UNIT_INFO[kind].description.length>30);assert.ok(unitCharacteristics(kind).length>=8);}});
+test('displayed characteristics reflect live casualties, morale and structure upgrades',()=>{const u=makeUnit('infantry',0,0);u.soldiers=3;u.morale=50;u.hp=57;assert.equal(unitDamage(u),17*.5*.75);const stats=unitCharacteristics('infantry',u);assert.equal(stats.find(s=>s.label==='Здоровье')!.value,'57 / 120');assert.equal(stats.find(s=>s.label==='Состав')!.value,'3 / 6 чел.');const building=buildingCharacteristics('tower',{id:'tower',kind:'tower',x:0,z:0,hp:390,maxHp:480,level:2});assert.equal(building.find(s=>s.label==='Урон за выстрел')!.value,'36');assert.equal(building.find(s=>s.label==='Прочность')!.value,'390 / 480');});
+test('unarmed convoys do not advertise a weapon and use the actual dispatch cost',()=>{const stats=unitCharacteristics('truck');assert.equal(stats.find(s=>s.label==='Урон за выстрел')!.value,'Не вооружён');assert.equal(stats.find(s=>s.label==='Стоимость')!.value,'40 топлива за отправку');});

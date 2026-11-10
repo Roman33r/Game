@@ -16,7 +16,7 @@ export function createWorld():World {
  const districts=createDistricts();
  let seed=612; const rand=()=>{seed=(seed*16807)%2147483647;return seed/2147483647};
  const zombies=[];for(let i=0;i<240;i++){let x=rand()*300-150,z=rand()*220-110;if(Math.hypot(x+40,z)<48){x+=85;} zombies.push(makeZombie(x,z,i%39===0?'heavy':i%13===0?'runner':i%19===0?'crawler':'walker'));}
- return {version:2,time:0,speed:1,paused:false,resources:{fuel:400,ammo:700,food:320,medicine:120,materials:420,power:100},units:[makeUnit('infantry',-46,4,'ALPHA · 01'),makeUnit('infantry',-32,8,'BRAVO · 02'),makeUnit('humvee',-42,-10,'VIKING · 03'),makeUnit('engineer',-55,-8,'PIONEER · 04'),makeUnit('medic',-52,14,'ANGEL · 05'),makeUnit('scout',-28,-6,'GHOST · 06')],zombies:[...zombies,...outerHordes()],buildings:[{id:uid(),kind:'hq',x:-40,z:0,hp:1000,maxHp:1000,level:1},{id:uid(),kind:'tower',x:-60,z:-20,hp:280,maxHp:280,level:1}],districts,log:[{time:0,text:'OVERLORD: закрепитесь в Downtown. Найдите и эвакуируйте 40 гражданских.',type:'info'}],shots:[],projectiles:[],impacts:[],kills:0,rescued:0,nextEvent:75,phase:0,outcome:'',selected:[],buildMode:null,sound:false,weather:true};
+ return {version:2,time:0,speed:1,paused:false,resources:{fuel:400,ammo:700,food:320,medicine:120,materials:420,power:100},units:[makeUnit('infantry',-46,4,'ALPHA · 01'),makeUnit('infantry',-32,8,'BRAVO · 02'),makeUnit('humvee',-42,-10,'VIKING · 03'),makeUnit('engineer',-55,-8,'PIONEER · 04'),makeUnit('medic',-52,14,'ANGEL · 05'),makeUnit('scout',-28,-6,'GHOST · 06')],zombies:[...zombies,...outerHordes()],buildings:[{id:uid(),kind:'hq',x:-40,z:0,hp:1000,maxHp:1000,level:1},{id:uid(),kind:'tower',x:-60,z:-20,hp:280,maxHp:280,level:1}],districts,log:[{time:0,text:'OVERLORD: закрепитесь в Downtown. Найдите и эвакуируйте 40 гражданских.',type:'info'}],shots:[],projectiles:[],impacts:[],kills:0,rescued:0,nextEvent:75,phase:0,outcome:'',selected:[],groups:{},buildMode:null,sound:false,weather:true};
 }
 
 // Version 1 saves retain their original units, construction and twelve district IDs.
@@ -25,5 +25,6 @@ export function restoreWorld(value:unknown):World {
  const data=value as Omit<World,'version'>&{version:number};
  if(![1,2].includes(data.version)||!Array.isArray(data.units)||!Array.isArray(data.buildings)||!Array.isArray(data.districts)||!Array.isArray(data.zombies)||!data.resources)throw new Error('Invalid save');
  if(data.version===1){const existing=new Set(data.districts.map(d=>d.id));data.districts.push(...createDistricts().filter(d=>!existing.has(d.id)));data.zombies.push(...outerHordes());data.projectiles=[];data.impacts=[];data.shots=[];}
+ data.groups??={};const alive=new Set(data.units.filter(u=>u.hp>0).map(u=>u.id));for(const key of Object.keys(data.groups))data.groups[key]=[...new Set(data.groups[key])].filter(id=>alive.has(id));
  data.version=2;data.projectiles??=[];data.impacts??=[];data.buildMode=null;return data as World;
 }
